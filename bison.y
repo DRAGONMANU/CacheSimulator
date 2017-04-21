@@ -7,6 +7,73 @@
 #include "code.h"
 #include <string.h>
 
+int hextoint(char* a)
+{
+	int res=0;
+	int i,t;
+	if(strlen(a)!=10)
+		return -1;
+	for(i=2;i<10;i++)
+	{
+		if(i==4)
+			t=4;
+		else
+			t=0;
+		switch (a[i])
+        {
+	        case '0':
+	            res = res + (0-t)*pow(16,9-i);break;
+	        case '1':
+	            res = res + (1-t)*pow(16,9-i);break;
+	        case '2':
+	            res = res + (2-t)*pow(16,9-i);break;
+	        case '3':
+	            res = res + (3-t)*pow(16,9-i);break;
+	        case '4':
+	            res = res + (4-t)*pow(16,9-i);break;
+	        case '5':
+	            res = res + (5-t)*pow(16,9-i);break;
+	        case '6':
+	            res = res + (6-t)*pow(16,9-i);break;
+	        case '7':
+	            res = res + (7-t)*pow(16,9-i);break;
+	        case '8':
+	            res = res + (8-t)*pow(16,9-i);break;
+	        case '9':
+	            res = res + (9-t)*pow(16,9-i);break;
+	        case 'A':
+	            res = res + (10-t)*pow(16,9-i);break;
+	        case 'B':
+	            res = res + (11-t)*pow(16,9-i);break;
+	        case 'C':
+	            res = res + (12-t)*pow(16,9-i);break;
+	        case 'D':
+	            res = res + (13-t)*pow(16,9-i);break;
+	        case 'E':
+	            res = res + (14-t)*pow(16,9-i);break;
+	        case 'f':
+	            res = res + (15-t)*pow(16,9-i);break;
+	        case 'a':
+	            res = res + (10-t)*pow(16,9-i);break;
+	        case 'b':
+	            res = res + (11-t)*pow(16,9-i);break;
+	        case 'c':
+	            res = res + (12-t)*pow(16,9-i);break;
+	        case 'd':
+	            res = res + (13-t)*pow(16,9-i);break;
+	        case 'e':
+	            res = res + (14-t)*pow(16,9-i);break;
+	        case 'F':
+	            res = res + (15-t)*pow(16,9-i);break;
+	        default:
+	            return -1;
+        }
+	}
+	//printf("ans: %d\n",res);;
+	return res;
+}
+
+
 
 char* tobinary(char* a)
 {	
@@ -521,11 +588,85 @@ main(int argc, char **argv)
 
 	int temp = 200;
 	int flag = 0;
+	int break_temp = 0;
+	int break_counter = 0;
+	int break_array[1000]; 			//made only upto 1000 breakpoints
+	int break_reached = 0;
+	int break_continue = 0;
+	for ( i = 0; i < 1000; ++i)
+	{
+		break_array[i] = 0;
+	} 
 	//highlight(0,1,0,1,0);
 	while(flag != 4)
 	{	
+		//printf("new %d\n",PC );
 		char* read = malloc(50*sizeof(char));
-		scanf("%s",read);
+		char* read2 = malloc(50*sizeof(char));
+		if(break_continue == 1)
+			for (i = 0; i < break_counter; ++i)
+			{
+				if(break_array[i]==PC)
+				{
+					printf("breakpoint reached\n"); // %s\n",inttohex(break_array[i])); // need to tell which breakpoint
+					break_reached = 1;
+				}
+			}
+		if(break_reached==0 && break_continue==1)	//nice logic
+			read = "step";
+		else
+		{
+			printf("Shell>> ");
+			scanf("%s",read);
+		}
+		if(!strcmp(read,"break"))
+		{
+			scanf("%s",read2);
+			//printf("%s\n", read2);
+			break_temp = hextoint(read2);
+			if(break_temp==-1)
+				printf("invalid address of breakpoint\n");
+			else
+			{		
+				break_array[break_counter++] = break_temp;
+				printf("breakpoint created\n");
+			}
+		}
+		else if(!strcmp(read,"delete"))
+		{
+			scanf("%s",read2);
+			//printf("%s\n", read2);
+			break_temp = hextoint(read2);
+			if(break_temp==-1)
+				printf("invalid address of breakpoint\n");
+			else
+			{
+				//delete breakpoints
+				for (i = 0; i < break_counter; ++i)
+				{
+				 	if(break_temp==break_array[i])
+				 		break;	
+				}
+				int j=0;
+				for(j=i;j<break_counter-1;j++)
+				{
+					break_array[j]=break_array[j+1];
+				}
+				break_counter--;
+				printf("breakpoint deleted\n");
+			}
+		}
+		else if(!strcmp(read,"continue"))
+		{
+			break_continue=1;	//continue till next breakpoint
+			break_reached=0;
+			read = "step";
+		}
+		else if(!strcmp(read,"run"))
+		{
+			break_reached = 0;
+			break_counter = 0;	//removes breakpoints
+		}
 		if(!strcmp(read,"step"))
 		{
 
