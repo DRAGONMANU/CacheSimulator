@@ -1,7 +1,17 @@
-test:
-	gcc code.h
-	bison -d bison.y
-	flex flex.l
-	gcc bison.tab.c lex.yy.c -o processor_simulator -lpthread
-clean:
-	rm bison.tab.c bison.tab.h code.h.gch lex.yy.c processor_simulator.exe *.svg *.txt
+
+CC = gcc
+CFLAGS = -g
+
+all:  sim
+
+sim:  main.o cache.o
+	$(CC) -o sim main.o cache.o -lm
+
+main.o:  main.c cache.h
+	$(CC) $(CFLAGS) -c main.c
+
+cache.o:  cache.c cache.h
+	$(CC) $(CFLAGS) -c cache.c
+
+clean: 
+	rm *.o 
