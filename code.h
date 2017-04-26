@@ -4,6 +4,9 @@
 #include<math.h>
 #include<string.h>
 FILE *output;
+FILE *trace;
+
+
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -12,7 +15,7 @@ pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 //IF-ID
 int gy = 0;
-
+int j_c = 0;
 int bin_to_dec(char* a)
 {	
 	//printf("in\n");
@@ -75,7 +78,7 @@ int mybranch = 0;
 
 struct IFID
 {
-	    char* instr_name_read;
+	char* instr_name_read;
     char* instr_name_write;
 	int add_read;
 	char* inst_read;char* name_read;
@@ -84,6 +87,7 @@ struct IFID
 	int inst_data_15_0_read;
 	int inst_data_20_16_read;
 	int inst_data_15_11_read;
+	
 
 	int add_write;
 	char* inst_write;char* name_write;
@@ -92,6 +96,7 @@ struct IFID
 	int inst_data_15_0_write;
 	int inst_data_20_16_write;
 	int inst_data_15_11_write;
+	int j_mag_write;
 
 
 };
@@ -105,6 +110,8 @@ int rf_wadg_left = 0;
 int rf_wadg_right = 0;
 int rf_wdg_left = 0;
 int rf_wdg_right = 0;
+
+
 
 //ID-EX
 struct IDEX
@@ -185,6 +192,8 @@ struct EXMEM
 	int rn_write;
 	int rm_read;
 	int rm_write;
+	int add_read;
+	int add_write;
 
 	int readdata2_read;
 	int addresult_read;
@@ -257,6 +266,9 @@ int cached = 0;
 
 void* thread_IF()
 {
+		while(j_c == 0)
+		{}
+		j_c = 0;
 
 		if(PC >= N )//|| stall_left == 1)
 		{
@@ -274,6 +286,7 @@ void* thread_IF()
 
 			if_id.add_read = PC + 1;
 			instl = im[PC].instr; namel = im[PC].name;
+			fprintf(trace, "2 %x\n", (PC*4 + 4194304));
 			if_id.inst_read = instl; if_id.name_read = namel;
 			cachei++;//tim++;
 
@@ -288,11 +301,9 @@ void* thread_ID()
 	//	return;
 	gy = 1;
 	while(gy == 0)
-	{
-		
-	}
-
+	{}
 	gy = 0;
+
 	int rf_rad1 = 0;
 	int rf_rad2 = 0;
 	int rf_wad  = 0;
@@ -314,7 +325,7 @@ void* thread_ID()
 	int write_data = 0;				//exception : how to store so as to access in WB stage
 	int readdata1 = 0;
 	int readdata2 = 0;
-
+	int j_mag = 0;
 	char* inst;
 	char* name;
 	int RegDest = 0;
@@ -332,14 +343,32 @@ void* thread_ID()
 
 		inst = if_id.inst_write;
 		name = if_id.name_write;
-
+		j_mag = if_id.j_mag_write;
 		add = if_id.add_write;
 		RegWrite = mem_wb.RegWrite_write;
 		write_register = mem_wb.write_register_write;
 		//printf("3\n");
 		write_data 	   = write_datag_left;
 
+		if(!strcmp("j",name))
+			{	
+				if(j_mag*4 >= 4194304)
+				PC = (j_mag*4 - 4194304)/4;
+				
+			}
+		else if(!strcmp("jal",name))
+			{	
+				if(j_mag*4 >= 4194304)
+				{PC = (j_mag*4 - 4194304)/4;
+				//printf("i am going to %d\n",PC);
+				rf[31] = (add)*4 + 4194304;}
+				
+			}
+
+		j_c = 1;
 		pthread_mutex_unlock(&mutex);
+
+
 
 		char* ty = malloc(5*sizeof(char));
 		int u;
@@ -353,6 +382,17 @@ void* thread_ID()
 		sa = bin_to_dec(ty);
 		//printf("%s , %d\n",name,sa);
 		if(!strcmp(name,"add"))
+		{
+			RegDest = 1;
+			RegWrite = 1;
+			ALUSrc = 0;
+			ALUOp = "010";
+			Branch = 0;
+			MemRead = 0;
+			MemWrite = 0;
+			MemtoReg = 0;
+		}
+		if(!strcmp(name,"addu"))
 		{
 			RegDest = 1;
 			RegWrite = 1;
@@ -451,7 +491,27 @@ void* thread_ID()
 			MemWrite = 0;
 			//MemtoReg = 0;
 		}
+		else if(!strcmp(name,"jal"))
+		{
+			RegDest = 0;
+			RegWrite = 0;
+			ALUSrc = 0;
+			Branch = 0;
+			MemRead = 0;
+			MemWrite = 0;
+			MemtoReg = 0;
+		}
 		else if(!strcmp(name,"j"))
+		{
+			RegDest = 0;
+			RegWrite = 0;
+			ALUSrc = 0;
+			Branch = 0;
+			MemRead = 0;
+			MemWrite = 0;
+			MemtoReg = 0;
+		}
+		else if(!strcmp(name,"mflo"))
 		{
 			RegDest = 1;
 			RegWrite = 1;
@@ -482,6 +542,26 @@ void* thread_ID()
 			MemtoReg = 0;
 		}
 		else if(!strcmp(name,"bgtz"))
+		{
+			//RegDest = 0;
+			RegWrite = 0;
+			//ALUSrc = 1;
+			Branch = 1;
+			MemRead = 0;
+			MemWrite = 0;
+			MemtoReg = 0;
+		}
+		else if(!strcmp(name,"jr"))
+		{
+			//RegDest = 0;
+			RegWrite = 0;
+			//ALUSrc = 1;
+			Branch = 1;
+			MemRead = 0;
+			MemWrite = 0;
+			MemtoReg = 0;
+		}
+		else if(!strcmp(name,"jalr"))
 		{
 			//RegDest = 0;
 			RegWrite = 0;
@@ -1002,13 +1082,21 @@ void* thread_EX()
 			else
 				Zero = 0;
 		}
-		else if (!strcmp(id_ex.name_write,"j"))
-		{
-				
-		}
 		else if (!strcmp(id_ex.name_write,"addi"))
 		{
 			alu_ans = alu1 + alu2 ;
+		}
+		else if (!strcmp(id_ex.name_write,"jr"))
+		{
+			alu_ans = alu1 ;
+		}
+		else if (!strcmp(id_ex.name_write,"mflo"))
+		{
+			alu_ans = rf[33] ;
+		}
+		else if (!strcmp(id_ex.name_write,"jalr"))
+		{
+			alu_ans = alu1 ;
 		}
 		else if (!strcmp(id_ex.name_write,"ori"))
 		{
@@ -1113,9 +1201,10 @@ void* thread_EX()
 		ex_mem.name_read = name;
 		ex_mem.alu_ans_read = alu_ans;
 		ex_mem.add_ans_read = add_ans;
+		ex_mem.add_read = add;
 		ex_mem.mux_ans_read = mux_ans;
 		ex_mem.rf_data_read = rf_outdata2; 		
-        ex_mem.instr_name_read = id_ex.instr_name_write;        
+        ex_mem.instr_name_read = id_ex.instr_name_write;
 		pthread_mutex_unlock(&mutex);
 
 		//printf("---------> fwda %d\n",fwda);
@@ -1128,7 +1217,7 @@ void* thread_MEM()
 	//	return;
 
 	
-
+	int add = 0;
 	double fwdc = 0;
 	char* name = "nop";
 	int alu_ans = 0;
@@ -1162,7 +1251,7 @@ void* thread_MEM()
 			alu_ans = ex_mem.alu_ans_write;
 			mux_ans = ex_mem.mux_ans_write;
 			rf_data = ex_mem.rf_data_write;
-
+			add 	= ex_mem.add_write;
 			MemtoReg = ex_mem.MemtoReg_write;
 
 			if(MemRead == 1 || MemWrite == 1)
@@ -1217,7 +1306,11 @@ void* thread_MEM()
 			if(MemWrite == 1)
 			{
 				if(alu_ans >= 268500992)
-				{mem[(alu_ans - 268500992)/4] = fg;cached++;}
+				{
+					mem[(alu_ans - 268500992)/4] = fg;cached++;
+					//printf("22222222\n");
+					fprintf(trace, "1 %x\n", ((alu_ans)*4 + 4194304));
+				}
 			}
 
 			if(MemRead == 1)
@@ -1225,16 +1318,24 @@ void* thread_MEM()
 				if(alu_ans >= 268500992)
 				{
 					mem_data = mem[(alu_ans - 268500992)/4];cached++;
+					//printf("111111111\n");
+					fprintf(trace, "0 %x\n", ((alu_ans)*4 + 4194304));
 				}
 			}
 
-
-
-			
-			if(ex_mem.Branch_write == 1 && ex_mem.Zero_write == 1)
+			if(!strcmp(name,"jr") && ex_mem.Branch_write == 1)
 			{
-
-				
+				PC = (alu_ans - 4194304)/4;
+				mybranch = 1;
+			}
+			else if(!strcmp(name,"jalr") && ex_mem.Branch_write == 1)
+			{
+				PC = (alu_ans - 4194304)/4;
+				rf[31] = (add)*4 + 4194304;
+				mybranch = 1;
+			}
+			else if(ex_mem.Branch_write == 1 && ex_mem.Zero_write == 1)
+			{
 				PC = ex_mem.add_ans_write; //printf("Branching to : %s\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",im[PC].name);
 				//time = time + 3; //timei = timei + 3;
 				mybranch = 1;

@@ -7,6 +7,25 @@
 #include "code.h"
 #include <string.h>
 
+char* tobinary(char*);
+	
+	char iperfect[20];
+	//iperfect = malloc(20*sizeof(char));
+	int ic_s = 0;
+	int iassc = 0;
+	char ireplpol[20];
+	//ireplpol = malloc(20*sizeof(char));
+	int iwthru = 0;
+	int ib_s = 0;
+	char dperfect[20];
+	//dperfect = malloc(20*sizeof(char));
+	int dc_s = 0;
+	int dassc = 0;
+	char dreplpol[20];
+	//dreplpol = malloc(20*sizeof(char));
+	int dwthru = 0;
+	int db_s = 0;
+
 int hextoint(char* a)
 {
 	int res=0;
@@ -350,12 +369,14 @@ void convertinstr()
 
 %union{
 	char* nod;
+	int nodd;
 }
 
 /* declare tokens */
 
-%token AND ADD OR LW SW SUB BEQ J ADDI ORI LUI SLTI BGTZ BLEZ LB SB BGEZ BLTZ MULT NOR SLL SLLV SLTU MADD
-%type<nod> AND ADD OR LW SW SUB BEQ J ADDI ORI LUI SLTI BGTZ BLEZ LB SB BGEZ BLTZ MULT NOR SLL SLLV SLTU MADD
+%token AND ADD OR LW SW SUB BEQ J ADDU MFLO JR JAL JALR ADDI ORI LUI SLTI BGTZ BLEZ LB SB BGEZ BLTZ MULT NOR SLL SLLV SLTU MADD Q W E R T Y U QQ WW EE RR TT YY UU
+%type<nod> AND ADD OR LW SW SUB BEQ J ADDU MFLO JR JAL JALR ADDI ORI LUI SLTI BGTZ BLEZ LB SB BGEZ BLTZ MULT NOR SLL SLLV SLTU MADD Q W U QQ WW UU
+%type<nodd> E R T Y EE RR TT YY
 %type<nod> exp
 %%
 
@@ -367,6 +388,11 @@ exp: AND {im[N].name="and";im[N].instr=$1;N++;}
 | SUB {im[N].name="sub";im[N].instr=$1;N++;}
 | BEQ {im[N].name="beq";im[N].instr=$1;N++;}
 | J   {im[N].name="j";im[N].instr=$1;N++;};
+| ADDU   {im[N].name="addu";im[N].instr=$1;N++;};
+| MFLO   {im[N].name="mflo";im[N].instr=$1;N++;};
+| JR   {im[N].name="jr";im[N].instr=$1;N++;};
+| JALR   {im[N].name="jalr";im[N].instr=$1;N++;};
+| JAL   {im[N].name="jal";im[N].instr=$1;N++;};
 | ADDI   {im[N].name="addi";im[N].instr=$1;N++;}
 | ORI   {im[N].name="ori";im[N].instr=$1;N++;}
 | LUI   {im[N].name="lui";im[N].instr=$1;N++;}
@@ -383,6 +409,37 @@ exp: AND {im[N].name="and";im[N].instr=$1;N++;}
 | SLL   {im[N].name="sll";im[N].instr=$1;N++;}
 | SLLV   {im[N].name="sllv";im[N].instr=$1;N++;}
 | SLTU   {im[N].name="sltu";im[N].instr=$1;N++;}
+| Q      {strcpy(iperfect , "false");printf("%s\n\n\n\n\n\n",$1);}
+| W      {strcpy(iperfect , "true");printf("%s\n\n\n\n\n\n",$1);}
+| E 	 {ic_s = ($1); printf("%d\n\n\n\n\n\n",$1);}
+| R 	 {iassc = ($1);printf("%d\n\n\n\n\n\n",$1);}
+| T 	 {iwthru = ($1);printf("%d\n\n\n\n\n\n",$1);}
+| Y 	 {ib_s = ($1);printf("%d\n\n\n\n\n\n",$1);}
+| U      {strcpy(ireplpol , "lru");printf("%s\n\n\n\n\n\n",$1);}
+
+| QQ      {strcpy(dperfect , "false");printf("%s\n\n\n\n\n\n",$1);}
+| WW      {strcpy(dperfect , "true");printf("%s\n\n\n\n\n\n",$1);}
+| EE 	 {dc_s = ($1);printf("%d\n\n\n\n\n\n",$1);}
+| RR 	 {dassc = ($1);printf("%d\n\n\n\n\n\n",$1);}
+| TT 	 {dwthru = ($1);printf("%d\n\n\n\n\n\n",$1);}
+| YY 	 {db_s = ($1);printf("%d\n\n\n\n\n\n",$1);}
+| UU      {strcpy(dreplpol , "lru");printf("%s\n\n\n\n\n\n",$1);}
+
+| exp Q      {strcpy(iperfect , "false");}
+| exp W      {strcpy(iperfect , "true");}
+| exp E 	 {ic_s = ($2);}
+| exp R 	 {iassc = ($2);}
+| exp T 	 {iwthru = ($2);}
+| exp Y 	 {ib_s = ($2);}
+| exp U      {strcpy(ireplpol , "lru");}
+
+| exp QQ      {strcpy(dperfect , "false");}
+| exp WW      {strcpy(dperfect , "true");}
+| exp EE 	 {dc_s = ($2);}
+| exp RR 	 {dassc = ($2);}
+| exp TT 	 {dwthru = ($2);}
+| exp YY 	 {db_s = ($2);}
+| exp UU      {strcpy(dreplpol , "lru");}
 | exp AND {im[N].name="and";im[N].instr=$2;N++;}
 | exp ADD {im[N].name="add";im[N].instr=$2;N++;}
 | exp OR  {im[N].name="or";im[N].instr=$2;N++;}
@@ -391,6 +448,11 @@ exp: AND {im[N].name="and";im[N].instr=$1;N++;}
 | exp SUB {im[N].name="sub";im[N].instr=$2;N++;}
 | exp BEQ {im[N].name="beq";im[N].instr=$2;N++;}
 | exp J   {im[N].name="j";im[N].instr=$2;N++;};
+| exp ADDU   {im[N].name="addu";im[N].instr=$2;N++;};
+| exp MFLO   {im[N].name="mflo";im[N].instr=$2;N++;};
+| exp JR   {im[N].name="jr";im[N].instr=$2;N++;};
+| exp JALR   {im[N].name="jalr";im[N].instr=$2;N++;};
+| exp JAL   {im[N].name="jal";im[N].instr=$2;N++;};
 | exp ADDI   {im[N].name="addi";im[N].instr=$2;N++;}
 | exp ORI   {im[N].name="ori";im[N].instr=$2;N++;}
 | exp LUI   {im[N].name="lui";im[N].instr=$2;N++;}
@@ -412,7 +474,10 @@ exp: AND {im[N].name="and";im[N].instr=$1;N++;}
 
 main(int argc, char **argv)
 {
+	
 	int i;
+
+	trace = fopen("trace.log", "w");
 
 	    char* wbins = "nop";
 	for(i=0;i<1000;i++)
@@ -442,6 +507,31 @@ main(int argc, char **argv)
 	
 	fclose(myfile);
 
+
+	yyin=fopen("input.cfg","r");
+
+	do {
+		yyparse();
+	} 
+	while (!feof(yyin));
+	fclose(yyin);	
+
+	printf("========================================================================================%s\n",iperfect);
+	printf("========================================================================================%d\n",ic_s);
+	printf("========================================================================================%d\n",iassc);
+	printf("========================================================================================%s\n",ireplpol);
+	printf("========================================================================================%d\n",iwthru);
+	printf("========================================================================================%d\n",ib_s);
+	
+
+	printf("========================================================================================%s\n",dperfect);
+	printf("========================================================================================%d\n",dc_s);
+	printf("========================================================================================%d\n",dassc);
+	printf("========================================================================================%s\n",dreplpol);
+	printf("========================================================================================%d\n",dwthru);
+	printf("========================================================================================%d\n",db_s);
+
+
 		id_ex.rn_read = 0;
 		id_ex.rn_write = 0;
 		id_ex.rm_read = 0;
@@ -467,23 +557,25 @@ main(int argc, char **argv)
 		ex_mem.rf_data_write = 0;
 		ex_mem.mux_ans_write = 0;
 
-		id_ex.rf_outdata1_read     = 0;
-		id_ex.rf_outdata2_read     = 0;
-		id_ex.inst_data_15_0_read  = 0;
-		id_ex.inst_data_20_16_read = 0;
-		id_ex.inst_data_15_11_read = 0;
+		id_ex.rf_outdata1_read      = 0;
+		id_ex.rf_outdata2_read      = 0;
+		id_ex.inst_data_15_0_read   = 0;
+		id_ex.inst_data_20_16_read  = 0;
+		id_ex.inst_data_15_11_read  = 0;
 		id_ex.rf_outdata1_write     = 0;
 		id_ex.rf_outdata2_write     = 0;
 		id_ex.inst_data_15_0_write  = 0;
 		id_ex.inst_data_20_16_write = 0;
 		id_ex.inst_data_15_11_write = 0;
 
+		
 		if_id.rf_rad1_write = 0;
 		if_id.rf_rad2_write = 0;
 		if_id.inst_data_15_0_write = 0;
 		if_id.inst_data_20_16_write = 0;
 		if_id.inst_data_15_11_write = 0;
 
+		
 		if_id.rf_rad1_read = 0;
 		if_id.rf_rad2_read = 0;
 		if_id.inst_data_15_0_read = 0;
@@ -563,6 +655,8 @@ main(int argc, char **argv)
 		ex_mem.MemRead_read   = 0;
 		ex_mem.Branch_read    = 0;
 		ex_mem.Zero_read      = 0;
+		ex_mem.add_write      = 0;
+		ex_mem.add_read      = 0;
 		ex_mem.RegWrite_read  = 0;
 		ex_mem.MemtoReg_read  = 0;
 		ex_mem.readdata2_read = 0;
@@ -705,7 +799,7 @@ main(int argc, char **argv)
 					if_id.add_write =  if_id.add_read;
 					if_id.inst_write = if_id.inst_read;
 					if_id.name_write = if_id.name_read;
-				
+
 				
 
 				//printf("if_id.instr : \n");
@@ -733,6 +827,12 @@ main(int argc, char **argv)
 				for(i=16;i<32;i++)
 					cc[i-16] = if_id.inst_read[i];
 				cc[i-16] = '\0';
+
+				char* ddd = malloc(26*sizeof(char));
+				for(i=6;i<32;i++)
+					ddd[i-6] = if_id.inst_read[i];
+				ddd[i-6] = '\0';
+				if_id.j_mag_write = bin_to_dec(ddd);
 
 				if(cc[0] == '0')
 				if_id.inst_data_15_0_write = bin_to_dec(cc);
@@ -825,6 +925,7 @@ main(int argc, char **argv)
 				ex_mem.Zero_write      = ex_mem.Zero_read     ;
 				ex_mem.RegWrite_write  = ex_mem.RegWrite_read ;
 				ex_mem.MemtoReg_write  = ex_mem.MemtoReg_read ;
+				ex_mem.add_write  	   = ex_mem.add_read 	  ;
 				ex_mem.readdata2_write = ex_mem.readdata2_read;
 				ex_mem.addresult_write = ex_mem.addresult_read;
 				ex_mem.aluresult_write = ex_mem.aluresult_read;
@@ -935,7 +1036,7 @@ main(int argc, char **argv)
 				printf("%s\n",mem_wb.name_write);	
 				printf("\n\n");*/
 
-        highlight(if_id.name_read, id_ex.name_read,ex_mem.name_read,mem_wb.name_read,wbins,argv[2]);
+        		highlight(if_id.name_read, id_ex.name_read,ex_mem.name_read,mem_wb.name_read,wbins,argv[2]);
 
 				if(strcmp(if_id.name_read,"nop") && strcmp(if_id.name_read,"0"))
 					{	tim++;}
