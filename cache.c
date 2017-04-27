@@ -11,23 +11,23 @@
 #include "main.h"
 
 /* cache configuration parameters */
-static int cache_split = 0;
-static int cache_usize = DEFAULT_CACHE_SIZE;
-static int cache_isize = DEFAULT_CACHE_SIZE; 
-static int cache_dsize = DEFAULT_CACHE_SIZE;
-static int cache_block_size = DEFAULT_CACHE_BLOCK_SIZE;
-static int words_per_block = DEFAULT_CACHE_BLOCK_SIZE / WORD_SIZE;
-static int cache_assoc = DEFAULT_CACHE_ASSOC;
-static int cache_writeback = DEFAULT_CACHE_WRITEBACK;
-static int cache_writealloc = DEFAULT_CACHE_WRITEALLOC;
+int cache_split = 0;
+int cache_usize = DEFAULT_CACHE_SIZE;
+int cache_isize = DEFAULT_CACHE_SIZE; 
+int cache_dsize = DEFAULT_CACHE_SIZE;
+int cache_block_size = DEFAULT_CACHE_BLOCK_SIZE;
+int words_per_block = DEFAULT_CACHE_BLOCK_SIZE / WORD_SIZE;
+int cache_assoc = DEFAULT_CACHE_ASSOC;
+int cache_writeback = DEFAULT_CACHE_WRITEBACK;
+int cache_writealloc = DEFAULT_CACHE_WRITEALLOC;
 
 /* cache model data structures */
-static Pcache icache;
-static Pcache dcache;
-static cache c1;
-static cache c2;
-static cache_stat cache_stat_inst;
-static cache_stat cache_stat_data;
+Pcache icache;
+Pcache dcache;
+cache c1;
+cache c2;
+cache_stat cache_stat_inst;
+cache_stat cache_stat_data;
 
 /************************************************************/
 void set_cache_param(param, value)
@@ -66,6 +66,12 @@ void set_cache_param(param, value)
     break;
   case CACHE_PARAM_NOWRITEALLOC:
     cache_writealloc = FALSE;
+    break;
+  case CACHE_PARAM_SPLIT:
+    cache_split = TRUE;
+    break;
+  case CACHE_PARAM_UNI:
+    cache_split = FALSE;
     break;
   default:
     printf("error set_cache_param: bad parameter value\n");
@@ -115,22 +121,27 @@ void init_cache()
   }
 
   c1.associativity = cache_assoc;
-  c1.index_mask = 0;
-  c1.index_mask_offset = 0;
+  c1.index_mask_offset = LOG2(cache_block_size);
+  c1.index_mask = ((c1.n_sets - 1) << c1.index_mask_offset);
+  c1.tag_mask_offset =  LOG2(c1.size);
+  c1.tag_mask = (0xFFFFFFFF << (c1.tag_mask_offset));
   c1.LRU_head =(Pcache_line *)malloc(sizeof(Pcache_line)*c1.n_sets);
   c1.LRU_tail =(Pcache_line *)malloc(sizeof(Pcache_line)*c1.n_sets);
   c1.set_contents = (int)malloc(sizeof(int)*c1.n_sets);
+  c1.contents = 0;
   
   c2.size = cache_dsize;
   c2.associativity = cache_assoc;
   c2.n_sets = cache_dsize / (cache_assoc * cache_block_size);;
-  c2.index_mask = 0;
-  c2.index_mask_offset = 4;
-  c2.tag_mask = 0;
-  c2.tag_mask_offset = 8;
+  c2.index_mask_offset = LOG2(cache_block_size);
+  c1.index_mask = ((c1.n_sets - 1) << c1.index_mask_offset);
+  c2.tag_mask_offset =  LOG2(c2.size);
+  c2.tag_mask = (0xFFFFFFFF << (c2.tag_mask_offset));
   c2.LRU_head =(Pcache_line *)malloc(sizeof(Pcache_line)*c2.n_sets);
   c2.LRU_tail =(Pcache_line *)malloc(sizeof(Pcache_line)*c2.n_sets);
   c2.set_contents = (int)malloc(sizeof(int)*c2.n_sets);
+  c2.contents = 0;
+
   int i = 0;
   for (i = 0; i < c1.n_sets; i++)
   {
@@ -165,13 +176,11 @@ void perform_access(addr, access_type)
   unsigned addr, access_type;
 {
   /* handle an access to the cache */
+  int hit = 0;
   int index = 0;
-  //unsigned tag = (addr & c1->tag_mask);    //DEBUG
-  Pcache_line LRU_head;
-  Pcache_line LRU_tail;
-  Pcache_line LRU_curr;
-
-  cache_stat_inst.accesses++;
+  unsigned tag = (addr & c1.tag_mask);   
+  unsigned addr_tag = 0;
+  Pcache_line tmp_curr;
 
   if(cache_split==0)
   {
@@ -180,54 +189,368 @@ void perform_access(addr, access_type)
     {
       printf("\nThis access (%d) is not performed as index (%d) out of bounds!\n",access_type,index);
       return;
-    }   
-    LRU_head = LRU_curr = c1.LRU_head[index];
-    while (LRU_curr != NULL)
+    }
+    
+    if(access_type==TRACE_DATA_STORE)
     {
-      if (LRU_curr->tag == tag)
-      { 
-        LRU_curr->hits++;
+      cache_stat_data.accesses++;
+      tmp_curr = c1.LRU_head[index];
+      addr_tag = (addr >> LOG2(cache_block_size * c1.n_sets));
+      
+      while(tmp_curr!=NULL)
+      {
+        if(tmp_curr->tag == addr_tag)
+        {
+          hit = 1;
+          break;
+        }
+        tmp_curr = tmp_curr->LRU_next;
+      }
+      if(hit)
+      {
+        if(cache_writeback==0)
+            cache_stat_data.copies_back++;
+        tmp_curr->dirty = 1;  
+        delete(&c1.LRU_head[index], &c1.LRU_tail[index], tmp_curr);
+        insert(&c1.LRU_head[index], &c1.LRU_tail[index], tmp_curr);
+      }
+      else
+      {
+        cache_stat_data.misses++;
+        if(cache_writealloc==0)
+          return;
+        Pcache_line tmp = malloc(sizeof(cache_line));
+        tmp->dirty = 1;
+        tmp->tag = addr_tag;
+        cache_stat_data.demand_fetches++; //probable error
+        if(c1.set_contents[index]==c1.associativity)
+        {
+          cache_stat_data.replacements++;
+          if(cache_writeback==0)
+            cache_stat_data.copies_back++;
+          if(c1.LRU_tail[index]->dirty && cache_writeback)
+            cache_stat_data.copies_back++;
 
-        if (access_type == TRACE_DATA_STORE)
-            {
-              LRU_curr->dirty = TRUE;
-            }
+          delete(&c1.LRU_head[index], &c1.LRU_tail[index], c1.LRU_tail[index]);
+          insert(&c1.LRU_head[index], &c1.LRU_tail[index], tmp);
+          
+        }
+        else if(c1.set_contents[index]<c1.associativity)
+        {
+          if(cache_writeback==0)//if WRITE-THROUGH
+            cache_stat_data.copies_back++;
+          c1.set_contents[index]++;
+          c1.contents++;
+          insert(&c1.LRU_head[index], &c1.LRU_tail[index], tmp);
+        }
+      }
+    }
 
-        
-        update_pointers(&c1.LRU_head[index],&c1.LRU_tail[index],LRU_curr);
+    else if(access_type==TRACE_DATA_LOAD)
+    {
+      cache_stat_data.accesses++;
+      tmp_curr = c1.LRU_head[index];
+      addr_tag = (addr >> LOG2(cache_block_size * c1.n_sets));
+      while(tmp_curr!=NULL)
+      {
+        if(tmp_curr->tag == addr_tag)
+        {
+          hit = 1;
+          break;
+        }
+        tmp_curr = tmp_curr->LRU_next;
+      }
+      if(hit)
+      {
+        delete(&c1.LRU_head[index], &c1.LRU_tail[index], tmp_curr);
+        insert(&c1.LRU_head[index], &c1.LRU_tail[index], tmp_curr);
+      }
+      else
+      {
+        cache_stat_data.misses++;
+        Pcache_line tmp = malloc(sizeof(cache_line));
+        tmp->dirty = 0;
+        tmp->tag = addr_tag;
+        cache_stat_data.demand_fetches++; //probable error
+        if(c1.set_contents[index]==c1.associativity)
+        {
+          cache_stat_data.replacements++;
+          if(c1.LRU_tail[index]->dirty && cache_writeback)
+            cache_stat_data.copies_back++;
+          delete(&c1.LRU_head[index], &c1.LRU_tail[index], c1.LRU_tail[index]);
+          insert(&c1.LRU_head[index], &c1.LRU_tail[index], tmp);
+        }
+        else if(c1.set_contents[index]<c1.associativity)
+        {
+          c1.set_contents[index]++;
+          c1.contents++;
+          insert(&c1.LRU_head[index], &c1.LRU_tail[index], tmp);
+        }
+      }
+    }
+    else if(access_type==TRACE_INST_LOAD)
+    {
+      cache_stat_inst.accesses++;
+      tmp_curr = c1.LRU_head[index];
+      addr_tag = (addr >> LOG2(cache_block_size * c1.n_sets));
+      while(tmp_curr!=NULL)
+      {
+        if(tmp_curr->tag == addr_tag)
+        {
+          hit = 1;
+          break;
+        }
+        tmp_curr = tmp_curr->LRU_next;
+      }
+      if(hit)
+      {
+        delete(&c1.LRU_head[index], &c1.LRU_tail[index], tmp_curr);
+        insert(&c1.LRU_head[index], &c1.LRU_tail[index], tmp_curr);
+      }
+      else
+      {
+        cache_stat_inst.misses++;
+        Pcache_line tmp = malloc(sizeof(cache_line));
+        tmp->dirty = 0;
+        tmp->tag = addr_tag;
+        cache_stat_inst.demand_fetches++; //probable error
+        if(c1.set_contents[index]==c1.associativity)
+        {
+          cache_stat_inst.replacements++;
+          if(c1.LRU_tail[index]->dirty && cache_writeback)
+          {
+            cache_stat_inst.copies_back++;
+            delete(&c1.LRU_head[index], &c1.LRU_tail[index], c1.LRU_tail[index]);
+            insert(&c1.LRU_head[index], &c1.LRU_tail[index], tmp);
+          }
+        }
+        else if(c1.set_contents[index]<c1.associativity)
+        {
+          c1.set_contents[index]++;
+          c1.contents++;
+          insert(&c1.LRU_head[index], &c1.LRU_tail[index], tmp);
+        }
+      }
+    }
+  }
+  else if(cache_split==1)
+  {
+    printf("asdasd\n");
+    if(access_type==TRACE_DATA_STORE)
+    {
+      index = (addr & c2.index_mask) >> c2.index_mask_offset;
+      if (index >= c2.n_sets)
+      {
+        printf("\nThis access (%d) is not performed as index (%d) out of bounds!\n",access_type,index);
         return;
       }
+      cache_stat_data.accesses++;
+      tmp_curr = c2.LRU_head[index];
+      addr_tag = (addr >> LOG2(cache_block_size * c2.n_sets));
+      
+      while(tmp_curr!=NULL)
+      {
+        if(tmp_curr->tag == addr_tag)
+        {
+          hit = 1;
+          break;
+        }
+        tmp_curr = tmp_curr->LRU_next;
+      }
+      if(hit)
+      {
+        if(cache_writeback==0)
+            cache_stat_data.copies_back++;
+        tmp_curr->dirty = 1;  
+        delete(&c2.LRU_head[index], &c2.LRU_tail[index], tmp_curr);
+        insert(&c2.LRU_head[index], &c2.LRU_tail[index], tmp_curr);
+      }
+      else
+      {
+        cache_stat_data.misses++;
+        if(cache_writealloc==0)
+          return;
+        Pcache_line tmp = malloc(sizeof(cache_line));
+        tmp->dirty = 1;
+        tmp->tag = addr_tag;
+        cache_stat_data.demand_fetches++; //probable error
+        if(c2.set_contents[index]==c2.associativity)
+        {
+          cache_stat_data.replacements++;
+          if(cache_writeback==0)
+            cache_stat_data.copies_back++;
+          if(c2.LRU_tail[index]->dirty && cache_writeback)
+            cache_stat_data.copies_back++;
 
-      LRU_curr = LRU_curr->LRU_next;
+          delete(&c2.LRU_head[index], &c2.LRU_tail[index], c2.LRU_tail[index]);
+          insert(&c2.LRU_head[index], &c2.LRU_tail[index], tmp);
+          
+        }
+        else if(c2.set_contents[index]<c2.associativity)
+        {
+          if(cache_writeback==0)//if WRITE-THROUGH
+            cache_stat_data.copies_back++;
+          c2.set_contents[index]++;
+          c2.contents++;
+          insert(&c2.LRU_head[index], &c2.LRU_tail[index], tmp);
+        }
+      }
     }
 
-
-    if(access_type==TRACE_INST_LOAD)
+    else if(access_type==TRACE_DATA_LOAD)
     {
-
+      index = (addr & c2.index_mask) >> c2.index_mask_offset;
+      if (index >= c2.n_sets)
+      {
+        printf("\nThis access (%d) is not performed as index (%d) out of bounds!\n",access_type,index);
+        return;
+      }
+      cache_stat_data.accesses++;
+      tmp_curr = c2.LRU_head[index];
+      addr_tag = (addr >> LOG2(cache_block_size * c2.n_sets));
+      while(tmp_curr!=NULL)
+      {
+        if(tmp_curr->tag == addr_tag)
+        {
+          hit = 1;
+          break;
+        }
+        tmp_curr = tmp_curr->LRU_next;
+      }
+      if(hit)
+      {
+        delete(&c2.LRU_head[index], &c2.LRU_tail[index], tmp_curr);
+        insert(&c2.LRU_head[index], &c2.LRU_tail[index], tmp_curr);
+      }
+      else
+      {
+        cache_stat_data.misses++;
+        Pcache_line tmp = malloc(sizeof(cache_line));
+        tmp->dirty = 0;
+        tmp->tag = addr_tag;
+        cache_stat_data.demand_fetches++; //probable error
+        if(c2.set_contents[index]==c2.associativity)
+        {
+          cache_stat_data.replacements++;
+          if(c2.LRU_tail[index]->dirty && cache_writeback)
+            cache_stat_data.copies_back++;
+          delete(&c2.LRU_head[index], &c2.LRU_tail[index], c2.LRU_tail[index]);
+          insert(&c2.LRU_head[index], &c2.LRU_tail[index], tmp);
+        }
+        else if(c2.set_contents[index]<c2.associativity)
+        {
+          c2.set_contents[index]++;
+          c2.contents++;
+          insert(&c2.LRU_head[index], &c2.LRU_tail[index], tmp);
+        }
+      }
     }
-    else if(access_type==TRACE_DATA_LOAD||access_type==TRACE_DATA_STORE)
+    else if(access_type==TRACE_INST_LOAD)
     {
-
+      index = (addr & c1.index_mask) >> c1.index_mask_offset;
+      if (index >= c1.n_sets)
+      {
+        printf("\nThis access (%d) is not performed as index (%d) out of bounds!\n",access_type,index);
+        return;
+      }
+      cache_stat_inst.accesses++;
+      tmp_curr = c1.LRU_head[index];
+      addr_tag = (addr >> LOG2(cache_block_size * c1.n_sets));
+      while(tmp_curr!=NULL)
+      {
+        if(tmp_curr->tag == addr_tag)
+        {
+          hit = 1;
+          break;
+        }
+        tmp_curr = tmp_curr->LRU_next;
+      }
+      if(hit)
+      {
+        delete(&c1.LRU_head[index], &c1.LRU_tail[index], tmp_curr);
+        insert(&c1.LRU_head[index], &c1.LRU_tail[index], tmp_curr);
+      }
+      else
+      {
+        cache_stat_inst.misses++;
+        Pcache_line tmp = malloc(sizeof(cache_line));
+        tmp->dirty = 0;
+        tmp->tag = addr_tag;
+        cache_stat_inst.demand_fetches++; //probable error
+        if(c1.set_contents[index]==c1.associativity)
+        {
+          cache_stat_inst.replacements++;
+          if(c1.LRU_tail[index]->dirty && cache_writeback)
+          {
+            cache_stat_inst.copies_back++;
+            delete(&c1.LRU_head[index], &c1.LRU_tail[index], c1.LRU_tail[index]);
+            insert(&c1.LRU_head[index], &c1.LRU_tail[index], tmp);
+          }
+        }
+        else if(c1.set_contents[index]<c1.associativity)
+        {
+          c1.set_contents[index]++;
+          c1.contents++;
+          insert(&c1.LRU_head[index], &c1.LRU_tail[index], tmp);
+        }
+      }
     }
   }
 
 }
 /************************************************************/
 
+void cleandirt()
+{
+  int i=0;
+  if(cache_split==0)
+  {
+    for (i = 0; i < c1.n_sets; ++i)
+      if(c1.LRU_head[i]!=NULL)
+      {
+        Pcache_line tmp = c1.LRU_head[i];
+        while(tmp!=NULL)
+        {
+          if(tmp->dirty==1 && cache_writeback)
+            cache_stat_data.copies_back++;
+          tmp = tmp->LRU_next;
+
+        }
+      }
+  }
+  else if(cache_split==1)
+  {
+    for (i = 0; i < c1.n_sets; ++i)
+      if(c1.LRU_head[i]!=NULL)
+      {
+        Pcache_line tmp = c1.LRU_head[i];
+        while(tmp!=NULL)
+        {
+          if(tmp->dirty==1 && cache_writeback)
+            cache_stat_inst.copies_back++;
+          tmp = tmp->LRU_next;
+        }
+      }
+    for (i = 0; i < c1.n_sets; ++i)
+      if(c2.LRU_head[i]!=NULL)
+      {
+        Pcache_line tmp = c2.LRU_head[i];
+        while(tmp!=NULL)
+        {
+          if(tmp->dirty==1 && cache_writeback)
+            cache_stat_data.copies_back++;
+          tmp = tmp->LRU_next;
+        }
+      }  
+  }
+}
+
 /************************************************************/
 void flush()
 {
 
   /* flush the cache */
-  c2.size = 0;
-  c2.associativity = 0;
-  c2.n_sets = 0;
-  c2.index_mask = 0;
-  c2.index_mask_offset = 0;
-  c2.LRU_head = NULL;
-  c2.LRU_tail = NULL;
-  c2.set_contents = NULL;
+  cleandirt();
 
 
 }
@@ -321,9 +644,9 @@ void print_stats()
   printf("  replace:   %d\n", cache_stat_data.replacements);
 
   printf(" TRAFFIC (in words)\n");
-  printf("  demand fetch:  %d\n", cache_stat_inst.demand_fetches + 
-	 cache_stat_data.demand_fetches);
-  printf("  copies back:   %d\n", cache_stat_inst.copies_back +
-	 cache_stat_data.copies_back);
+  printf("  demand fetch:  %d\n", WORD_SIZE*(cache_stat_inst.demand_fetches + 
+	 cache_stat_data.demand_fetches));
+  printf("  copies back:   %d\n", WORD_SIZE*(cache_stat_inst.copies_back +
+	 cache_stat_data.copies_back));
 }
 /************************************************************/
