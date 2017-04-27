@@ -26,7 +26,8 @@
 #define CACHE_PARAM_WRITETHROUGH 6
 #define CACHE_PARAM_WRITEALLOC 7
 #define CACHE_PARAM_NOWRITEALLOC 8
-
+#define CACHE_PARAM_SPLIT 9
+#define CACHE_PARAM_UNI 10
 
 /* structure definitions */
 typedef struct cache_line_ {
